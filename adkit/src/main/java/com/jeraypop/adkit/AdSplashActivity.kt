@@ -32,11 +32,6 @@ class AdSplashActivity : Activity(),
     TTAdNative.CSJSplashAdListener,
     CSJSplashAd.SplashAdListener {
 
-    private companion object {
-        /** 等待 TTAdSdk.start 的上限（毫秒） */
-        const val SDK_START_TIMEOUT_MS = 8000L
-    }
-
     private lateinit var container: FrameLayout
     private lateinit var tvTitle: TextView
 
@@ -57,9 +52,6 @@ class AdSplashActivity : Activity(),
     private val handler = Handler(Looper.getMainLooper())
     private val forceNext = Runnable { next() }
 
-    /** 等 TTAdSdk.start 的上限，超时直接进主页，避免首次启动停在开屏页 */
-    private val sdkStartTimeout = Runnable { next() }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -71,14 +63,14 @@ class AdSplashActivity : Activity(),
         this.config = config
 
         setContentView(createContentView(config))
+        startCountdown(config.splashUi.countdownSeconds)
         waitForSdkThenFetch()
     }
 
     /**
      * 首次安装时 SDK 可能刚 init，TTAdSdk.start 还是异步的。
-     * 这里等 start 成功后再开始倒计时并请求开屏：
-     * - 若倒计时先跑，start 还没成功页面就退出了，表现为「首次同意后没有开屏」；
-     * - start 失败或等待超时则直接进主页，避免停在启动页。
+     * 这里等 start 成功后再请求开屏，避免初始化未完成导致首次拉不到广告；
+     * 等待期间倒计时照常走，倒计时结束仍未就绪就直接进主页。
      */
     private fun waitForSdkThenFetch() {
         if (!AdKit.initIfAgreed(this)) {
@@ -86,13 +78,9 @@ class AdSplashActivity : Activity(),
             return
         }
 
-        handler.postDelayed(sdkStartTimeout, SDK_START_TIMEOUT_MS)
-
         AdKit.whenSdkStarted { success ->
             if (isFinishing || isDestroyed) return@whenSdkStarted
-            handler.removeCallbacks(sdkStartTimeout)
             if (success) {
-                startCountdown(config?.splashUi?.countdownSeconds ?: 5)
                 fetchSplash()
             } else {
                 next()
