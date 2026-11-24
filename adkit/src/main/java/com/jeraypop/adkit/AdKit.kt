@@ -3,7 +3,8 @@ package com.jeraypop.adkit
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
 import android.widget.FrameLayout
 import com.bytedance.sdk.openadsdk.TTAdConfig
 import com.bytedance.sdk.openadsdk.TTAdSdk
@@ -24,6 +25,12 @@ object AdKit {
     private var navigator: AdNavigator? = null
     private var initialized = false
 
+    /** TTAdSdk.start 的异步结果，开屏页必须等它成功后再请求广告 */
+    private var sdkStarted = false
+    private var sdkStartFailed = false
+    private val startListeners = mutableListOf<(Boolean) -> Unit>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+
     @JvmStatic
     fun setup(context: Context, config: AdConfig, privacyChecker: PrivacyChecker) {
         this.config = config
@@ -41,6 +48,46 @@ object AdKit {
 
     @JvmStatic
     fun isInitialized(): Boolean = initialized
+
+    @JvmStatic
+    fun isSdkStarted(): Boolean = sdkStarted
+
+    /**
+     * 等待 TTAdSdk.start 结果。已成功/失败会立即回调，未完成则排队。
+     * 回调切到主线程。
+     */
+    internal fun whenSdkStarted(listener: (Boolean) -> Unit) {
+        val immediate: Boolean? = synchronized(this) {
+            when {
+                sdkStarted -> true
+                sdkStartFailed -> false
+                else -> {
+                    startListeners.add(listener)
+                    null
+                }
+            }
+        }
+
+        if (immediate != null) {
+            mainHandler.post { listener(immediate) }
+        }
+    }
+
+    private fun notifySdkStartResult(success: Boolean) {
+        val listeners = synchronized(this) {
+            sdkStarted = success
+            sdkStartFailed = !success
+            val copy = startListeners.toList()
+            startListeners.clear()
+            copy
+        }
+
+        if (listeners.isNotEmpty()) {
+            mainHandler.post {
+                listeners.forEach { it(success) }
+            }
+        }
+    }
 
     @JvmStatic
     fun isPrivacyAgreed(context: Context): Boolean {
@@ -79,6 +126,7 @@ object AdKit {
 
         if (!TTAdSdk.init(context.applicationContext, adConfig)) {
             AdLog.e("TTAdSdk.init 失败")
+            notifySdkStartResult(false)
             return false
         }
 
@@ -86,10 +134,12 @@ object AdKit {
         TTAdSdk.start(object : TTAdSdk.Callback {
             override fun success() {
                 AdLog.d("TTAdSdk start success")
+                notifySdkStartResult(true)
             }
 
             override fun fail(code: Int, msg: String?) {
                 AdLog.e("TTAdSdk start fail code=$code msg=$msg")
+                notifySdkStartResult(false)
             }
         })
         return true

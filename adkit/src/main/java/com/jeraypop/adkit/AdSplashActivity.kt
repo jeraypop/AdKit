@@ -64,7 +64,27 @@ class AdSplashActivity : Activity(),
 
         setContentView(createContentView(config))
         startCountdown(config.splashUi.countdownSeconds)
-        fetchSplash()
+        waitForSdkThenFetch()
+    }
+
+    /**
+     * 首次安装时 SDK 可能刚 init，TTAdSdk.start 还是异步的。
+     * 这里等 start 成功后再请求开屏，避免 40004/初始化未完成导致首次拉不到广告。
+     */
+    private fun waitForSdkThenFetch() {
+        if (!AdKit.initIfAgreed(this)) {
+            next()
+            return
+        }
+
+        AdKit.whenSdkStarted { success ->
+            if (isFinishing || isDestroyed) return@whenSdkStarted
+            if (success) {
+                fetchSplash()
+            } else {
+                next()
+            }
+        }
     }
 
     private fun dp(value: Float): Int {

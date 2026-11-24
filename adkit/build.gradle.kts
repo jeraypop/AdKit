@@ -9,7 +9,7 @@ plugins {
 
 // JitPack / mavenLocal 统一坐标：com.github.jeraypop:AdKit
 group = "com.github.jeraypop"
-version = "1.0.0"
+version = "1.0.1"
 
 android {
     namespace = "com.jeraypop.adkit"
