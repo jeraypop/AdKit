@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.FrameLayout
 import com.bytedance.sdk.openadsdk.TTAdConfig
 import com.bytedance.sdk.openadsdk.TTAdSdk
@@ -24,6 +25,9 @@ object AdKit {
     private var privacyChecker: PrivacyChecker? = null
     private var navigator: AdNavigator? = null
     private var initialized = false
+
+    /** 上一次真正展示开屏的时间（elapsedRealtime），用于回前台补开屏的频控 */
+    private var lastSplashShownAt = 0L
 
     /** TTAdSdk.start 的异步结果，开屏页必须等它成功后再请求广告 */
     private var sdkStarted = false
@@ -182,12 +186,32 @@ object AdKit {
             return
         }
 
+        // 回前台补开屏才做频控：两次开屏间隔小于配置值时直接跳过，冷启动不受限制
+        if (!openHomeAfter && isInSplashInterval(config)) {
+            return
+        }
+
+        lastSplashShownAt = SystemClock.elapsedRealtime()
+
         val intent = Intent(context, AdSplashActivity::class.java)
         intent.putExtra(AdSplashActivity.EXTRA_OPEN_HOME_AFTER, openHomeAfter)
         if (context !is Activity) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    /** 距上次真正展示开屏还不到 [AdConfig.splashIntervalMs] 时返回 true */
+    private fun isInSplashInterval(config: AdConfig): Boolean {
+        val interval = config.splashIntervalMs
+        if (interval <= 0L || lastSplashShownAt == 0L) return false
+
+        val elapsed = SystemClock.elapsedRealtime() - lastSplashShownAt
+        if (elapsed < interval) {
+            AdLog.d("开屏频控中，跳过（${elapsed}ms < ${interval}ms）")
+            return true
+        }
+        return false
     }
 
     /** 广告结束后的统一主页跳转 */

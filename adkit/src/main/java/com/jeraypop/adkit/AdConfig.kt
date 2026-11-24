@@ -21,7 +21,12 @@ data class AdConfig @JvmOverloads constructor(
     val useMediation: Boolean = true,
     val splashUi: SplashUiConfig = SplashUiConfig(),
     /** 广告结束后要打开的 Activity；不设置则使用 AdNavigator */
-    val nextActivity: Class<out Activity>? = null
+    val nextActivity: Class<out Activity>? = null,
+    /**
+     * 两次开屏之间的最小间隔（毫秒），用于「从后台回到前台补开屏」的频控。
+     * 默认 30 秒；传 0 或负数表示不限制。
+     */
+    val splashIntervalMs: Long = 30_000L
 )
 
 /**
