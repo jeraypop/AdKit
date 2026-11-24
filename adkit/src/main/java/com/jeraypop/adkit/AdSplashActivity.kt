@@ -32,11 +32,19 @@ class AdSplashActivity : Activity(),
     TTAdNative.CSJSplashAdListener,
     CSJSplashAd.SplashAdListener {
 
+    internal companion object {
+        /** 开屏结束后是否跳主页；从后台回前台补开屏时为 false */
+        const val EXTRA_OPEN_HOME_AFTER = "com.jeraypop.adkit.extra_open_home_after"
+    }
+
     private lateinit var container: FrameLayout
     private lateinit var tvTitle: TextView
 
     private var config: AdConfig? = null
     private var splashAd: CSJSplashAd? = null
+
+    /** 结束后是否跳主页；后台回前台补开屏时为 false，只关掉自己 */
+    private var openHomeAfter = true
 
     private var countdown = 0
     @Volatile
@@ -54,6 +62,8 @@ class AdSplashActivity : Activity(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        openHomeAfter = intent?.getBooleanExtra(EXTRA_OPEN_HOME_AFTER, true) ?: true
 
         val config = AdKit.currentConfig()
         if (config == null || config.splashAdId.isNullOrBlank()) {
@@ -305,7 +315,9 @@ class AdSplashActivity : Activity(),
         if (stopNext) return
         stopNext = true
         handler.removeCallbacksAndMessages(null)
-        AdKit.openHome(this)
+        if (openHomeAfter) {
+            AdKit.openHome(this)
+        }
         finish()
     }
 

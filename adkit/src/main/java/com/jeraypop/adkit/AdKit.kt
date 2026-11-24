@@ -155,31 +155,35 @@ object AdKit {
      * 启动开屏：
      * - 未同意隐私 / 没配开屏 / SDK 初始化失败：直接走主页；
      * - 否则打开库内的 [AdSplashActivity]。
+     *
+     * @param openHomeAfter 开屏结束后是否跳主页。从后台回到前台补开屏时传 false，
+     *                      这样开屏页关掉后会直接露出下面的页面，不会重复新建 Activity。
      */
     @JvmStatic
-    fun startSplash(context: Context) {
+    fun startSplash(context: Context, openHomeAfter: Boolean = true) {
         val config = config ?: run {
-            openHome(context)
+            if (openHomeAfter) openHome(context)
             return
         }
 
         if (!isPrivacyAgreed(context)) {
             AdLog.w("隐私政策未同意，跳过开屏直接进主页")
-            openHome(context)
+            if (openHomeAfter) openHome(context)
             return
         }
 
         if (config.splashAdId.isNullOrBlank()) {
-            openHome(context)
+            if (openHomeAfter) openHome(context)
             return
         }
 
         if (!initIfAgreed(context)) {
-            openHome(context)
+            if (openHomeAfter) openHome(context)
             return
         }
 
         val intent = Intent(context, AdSplashActivity::class.java)
+        intent.putExtra(AdSplashActivity.EXTRA_OPEN_HOME_AFTER, openHomeAfter)
         if (context !is Activity) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
