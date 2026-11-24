@@ -1,8 +1,10 @@
 package com.jeraypop.adkit
 
 import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -21,6 +23,9 @@ import com.bytedance.sdk.openadsdk.TTAdSdk
  */
 object AdKit {
 
+    /** 所有 Activity 都 stop 后，延迟这么久才判定为「进入后台」，避开旋转重建的瞬时空档 */
+    private const val BACKGROUND_MARK_DELAY_MS = 700L
+
     private var config: AdConfig? = null
     private var privacyChecker: PrivacyChecker? = null
     private var navigator: AdNavigator? = null
@@ -28,6 +33,9 @@ object AdKit {
 
     /** 上一次真正展示开屏的时间（elapsedRealtime），用于回前台补开屏的频控 */
     private var lastSplashShownAt = 0L
+
+    /** 前台回补开屏是否已注册，保证只注册一次 */
+    private var foregroundSplashInstalled = false
 
     /** TTAdSdk.start 的异步结果，开屏页必须等它成功后再请求广告 */
     private var sdkStarted = false
@@ -212,6 +220,78 @@ object AdKit {
             return true
         }
         return false
+    }
+
+    /**
+     * 安装「回到前台补开屏」能力，整个进程只需调用一次（重复调用会被忽略）。
+     *
+     * 判定规则：
+     * - 应用内页面切换（同为进程内 Activity）不算后台，不会触发；
+     * - 全部 Activity 都 stop 并持续 [BACKGROUND_MARK_DELAY_MS] 才算进入后台，
+     *   这样旋转/配置变更重建不会误触发；
+     * - 回到前台后只对 [shouldSplash] 返回 true 的页面补开屏，
+     *   间隔由 [AdConfig.splashIntervalMs] 控制（默认 30 秒）。
+     */
+    @JvmStatic
+    fun installForegroundSplash(
+        application: Application,
+        shouldSplash: (Activity) -> Boolean = { true }
+    ) {
+        if (foregroundSplashInstalled) return
+        foregroundSplashInstalled = true
+
+        application.registerActivityLifecycleCallbacks(
+            object : Application.ActivityLifecycleCallbacks {
+                private var startedCount = 0
+                private var isBackground = false
+                private val handler = Handler(Looper.getMainLooper())
+                private val markBackground = Runnable {
+                    if (startedCount == 0) {
+                        isBackground = true
+                        AdLog.d("应用进入后台")
+                    }
+                }
+
+                override fun onActivityStarted(activity: Activity) {
+                    val fromBackground = isBackground
+                    startedCount++
+
+                    if (!fromBackground) return
+
+                    isBackground = false
+                    handler.removeCallbacks(markBackground)
+
+                    // 开屏自己、正在退出的壳页不再叠加开屏
+                    if (activity is AdSplashActivity || activity.isFinishing) return
+                    if (!shouldSplash(activity)) return
+
+                    AdLog.d("回到前台，补一次开屏: ${activity.javaClass.simpleName}")
+                    startSplash(activity, openHomeAfter = false)
+                }
+
+                override fun onActivityStopped(activity: Activity) {
+                    // 配置变更的旧实例先不减，等 onActivityDestroyed 再平衡，避免瞬时空档
+                    if (activity.isChangingConfigurations) return
+                    startedCount = (startedCount - 1).coerceAtLeast(0)
+                    if (startedCount == 0) {
+                        handler.postDelayed(markBackground, BACKGROUND_MARK_DELAY_MS)
+                    }
+                }
+
+                override fun onActivityDestroyed(activity: Activity) {
+                    if (!activity.isChangingConfigurations) return
+                    startedCount = (startedCount - 1).coerceAtLeast(0)
+                    if (startedCount == 0) {
+                        handler.postDelayed(markBackground, BACKGROUND_MARK_DELAY_MS)
+                    }
+                }
+
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+                override fun onActivityResumed(activity: Activity) = Unit
+                override fun onActivityPaused(activity: Activity) = Unit
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+            }
+        )
     }
 
     /** 广告结束后的统一主页跳转 */
