@@ -88,12 +88,21 @@ class AdSplashActivity : Activity(),
             return
         }
 
-        AdKit.whenSdkStarted { success ->
-            if (isFinishing || isDestroyed) return@whenSdkStarted
-            if (success) {
-                fetchSplash()
-            } else {
+        // 等广告总开关（最多 1.5 秒），关闭时直接进主页
+        AdSwitch.await(1500L) { enabled ->
+            if (isFinishing || isDestroyed) return@await
+            if (!enabled) {
+                AdLog.d("广告开关已关闭，跳过开屏")
                 next()
+                return@await
+            }
+            AdKit.whenSdkStarted { success ->
+                if (isFinishing || isDestroyed) return@whenSdkStarted
+                if (success) {
+                    fetchSplash()
+                } else {
+                    next()
+                }
             }
         }
     }

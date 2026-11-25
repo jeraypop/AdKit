@@ -123,6 +123,10 @@ object AdKit {
             AdLog.w("隐私政策未同意，暂不初始化广告 SDK")
             return false
         }
+
+        // 隐私同意后再拉取广告总开关
+        AdSwitch.fetch(config.adSwitchUrl)
+
         if (config.appId.isBlank() || config.appId.startsWith("TODO")) {
             AdLog.e("appId 未配置")
             return false
@@ -180,6 +184,14 @@ object AdKit {
 
         if (!isPrivacyAgreed(context)) {
             AdLog.w("隐私政策未同意，跳过开屏直接进主页")
+            if (openHomeAfter) openHome(context)
+            return
+        }
+
+        // 长驻应用回到前台时按缓存有效期刷新开关
+        AdSwitch.fetch(config.adSwitchUrl)
+        if (AdSwitch.isResolved() && !AdSwitch.isEnabled()) {
+            AdLog.d("广告开关已关闭，跳过开屏")
             if (openHomeAfter) openHome(context)
             return
         }
@@ -324,8 +336,16 @@ object AdKit {
         }
     }
 
+    /** 当前广告总开关状态；未拉取到结果前默认 true */
+    @JvmStatic
+    fun isAdEnabled(): Boolean = AdSwitch.isEnabled()
+
     @JvmStatic
     fun loadBanner(activity: Activity, container: FrameLayout, listener: AdViewListener? = null) {
+        if (!AdSwitch.isEnabled()) {
+            listener?.onError(-1, "广告开关已关闭")
+            return
+        }
         if (!ensureInitialized(activity)) {
             listener?.onError(-1, "广告 SDK 未初始化")
             return
@@ -335,6 +355,10 @@ object AdKit {
 
     @JvmStatic
     fun loadNative(activity: Activity, container: FrameLayout, listener: AdViewListener? = null) {
+        if (!AdSwitch.isEnabled()) {
+            listener?.onError(-1, "广告开关已关闭")
+            return
+        }
         if (!ensureInitialized(activity)) {
             listener?.onError(-1, "广告 SDK 未初始化")
             return
@@ -344,6 +368,10 @@ object AdKit {
 
     @JvmStatic
     fun loadReward(activity: Activity, listener: RewardAdListener? = null) {
+        if (!AdSwitch.isEnabled()) {
+            listener?.onError(-1, "广告开关已关闭")
+            return
+        }
         if (!ensureInitialized(activity)) {
             listener?.onError(-1, "广告 SDK 未初始化")
             return
@@ -353,6 +381,10 @@ object AdKit {
 
     @JvmStatic
     fun loadInterstitial(activity: Activity, listener: FullScreenAdListener? = null) {
+        if (!AdSwitch.isEnabled()) {
+            listener?.onError(-1, "广告开关已关闭")
+            return
+        }
         if (!ensureInitialized(activity)) {
             listener?.onError(-1, "广告 SDK 未初始化")
             return
@@ -362,6 +394,10 @@ object AdKit {
 
     @JvmStatic
     fun loadFullScreen(activity: Activity, listener: FullScreenAdListener? = null) {
+        if (!AdSwitch.isEnabled()) {
+            listener?.onError(-1, "广告开关已关闭")
+            return
+        }
         if (!ensureInitialized(activity)) {
             listener?.onError(-1, "广告 SDK 未初始化")
             return

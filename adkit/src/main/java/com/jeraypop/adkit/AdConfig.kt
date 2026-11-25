@@ -26,8 +26,15 @@ data class AdConfig @JvmOverloads constructor(
      * 两次开屏之间的最小间隔（毫秒），用于「从后台回到前台补开屏」的频控。
      * 默认 30 秒；传 0 或负数表示不限制。
      */
-    val splashIntervalMs: Long = 30_000L
-)
+    val splashIntervalMs: Long = 30_000L,
+    /** 广告总开关地址；宿主可配置，不传时使用 [DEFAULT_AD_SWITCH_URL] */
+    val adSwitchUrl: String = DEFAULT_AD_SWITCH_URL
+) {
+    companion object {
+        const val DEFAULT_AD_SWITCH_URL =
+            "https://gitlab.com/mytiper/qxz/-/raw/master/public/adswitch.json"
+    }
+}
 
 /**
  * 开屏广告页的 UI 配置。
