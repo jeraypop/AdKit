@@ -40,6 +40,12 @@ object AdKit {
     /** TTAdSdk.start 的异步结果，开屏页必须等它成功后再请求广告 */
     private var sdkStarted = false
     private var sdkStartFailed = false
+
+    /** start 失败后允许自动重试的次数（仅针对谢幕后再次请求开屏的场景） */
+    private const val MAX_START_RETRIES = 1
+    private var startRetryCount = 0
+    private var startRetrying = false
+
     private val startListeners = mutableListOf<(Boolean) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -68,11 +74,27 @@ object AdKit {
      * 等待 TTAdSdk.start 结果。已成功/失败会立即回调，未完成则排队。
      * 回调切到主线程。
      */
-    internal fun whenSdkStarted(listener: (Boolean) -> Unit) {
+    /**
+     * 等待 TTAdSdk.start 结果。已成功/失败会立即回调，未完成则排队。
+     * 若上次 start 失败，这里会自动重试一次（每个进程最多一次），避免一次失败导致整个进程内开屏全部失效。
+     * 回调切到主线程。
+     */
+    internal fun whenSdkStarted(context: Context, listener: (Boolean) -> Unit) {
+        var needRetry = false
         val immediate: Boolean? = synchronized(this) {
             when {
                 sdkStarted -> true
-                sdkStartFailed -> false
+                sdkStartFailed -> {
+                    if (startRetryCount < MAX_START_RETRIES && !startRetrying) {
+                        startRetryCount++
+                        startRetrying = true
+                        startListeners.add(listener)
+                        needRetry = true
+                        null
+                    } else {
+                        false
+                    }
+                }
                 else -> {
                     startListeners.add(listener)
                     null
@@ -80,8 +102,36 @@ object AdKit {
             }
         }
 
+        if (needRetry) {
+            retryStart(context.applicationContext)
+            return
+        }
         if (immediate != null) {
             mainHandler.post { listener(immediate) }
+        }
+    }
+
+    private fun retryStart(context: Context) {
+        AdLog.w("TTAdSdk.start 上次失败，重试第 $startRetryCount 次")
+        val accepted = try {
+            TTAdSdk.start(object : TTAdSdk.Callback {
+                override fun success() {
+                    AdLog.d("TTAdSdk start retry success")
+                    notifySdkStartResult(true)
+                }
+
+                override fun fail(code: Int, msg: String?) {
+                    AdLog.e("TTAdSdk start retry fail code=$code msg=$msg")
+                    notifySdkStartResult(false)
+                }
+            })
+            true
+        } catch (e: Exception) {
+            AdLog.e("TTAdSdk.start 重试异常", e)
+            false
+        }
+        if (!accepted) {
+            notifySdkStartResult(false)
         }
     }
 
@@ -89,6 +139,10 @@ object AdKit {
         val listeners = synchronized(this) {
             sdkStarted = success
             sdkStartFailed = !success
+            startRetrying = false
+            if (success) {
+                startRetryCount = 0
+            }
             val copy = startListeners.toList()
             startListeners.clear()
             copy

@@ -67,6 +67,7 @@ class AdSplashActivity : Activity(),
 
         val config = AdKit.currentConfig()
         if (config == null || config.splashAdId.isNullOrBlank()) {
+            AdLog.w("跳过开屏：config 为空或未配置开屏广告位")
             next()
             return
         }
@@ -84,23 +85,27 @@ class AdSplashActivity : Activity(),
      */
     private fun waitForSdkThenFetch() {
         if (!AdKit.initIfAgreed(this)) {
+            AdLog.w("跳过开屏：广告 SDK 未初始化")
             next()
             return
         }
 
-        // 等广告总开关（最多 1.5 秒），关闭时直接进主页
-        AdSwitch.await(1500L) { enabled ->
+        // 等广告总开关，关闭时直接进主页。
+        // 3.5s = 覆盖 AdSwitch 的 connect/read timeout（各 3s）内的绝大多数耗时：实测 GitLab raw
+        // 响应 1.0~5.2s，原先的 1.5s 经常先超时、按默认「开启」放行，导致 adswitch=false 仍弹广告。
+        AdSwitch.await(3500L) { enabled ->
             if (isFinishing || isDestroyed) return@await
             if (!enabled) {
                 AdLog.d("广告开关已关闭，跳过开屏")
                 next()
                 return@await
             }
-            AdKit.whenSdkStarted { success ->
+            AdKit.whenSdkStarted(this) { success ->
                 if (isFinishing || isDestroyed) return@whenSdkStarted
                 if (success) {
                     fetchSplash()
                 } else {
+                    AdLog.w("跳过开屏：TTAdSdk.start 未成功")
                     next()
                 }
             }
@@ -206,6 +211,7 @@ class AdSplashActivity : Activity(),
             return
         }
         if (!AdKit.initIfAgreed(this)) {
+            AdLog.w("跳过开屏：广告 SDK 未初始化")
             next()
             return
         }
