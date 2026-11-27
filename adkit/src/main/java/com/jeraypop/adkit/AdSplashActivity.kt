@@ -206,6 +206,7 @@ class AdSplashActivity : Activity(),
     }
 
     private fun fetchSplash() {
+        AdLog.d("开始请求开屏广告")
         val config = config ?: run {
             next()
             return

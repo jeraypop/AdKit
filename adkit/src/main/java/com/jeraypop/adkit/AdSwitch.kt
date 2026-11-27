@@ -54,6 +54,7 @@ internal object AdSwitch {
         }
 
         Thread({
+            AdLog.d("开始请求广告开关：$target")
             var result = true
             try {
                 val connection = (URL(target).openConnection() as HttpURLConnection).apply {
@@ -90,9 +91,12 @@ internal object AdSwitch {
             waiters.clear()
             copy
         }
-        AdLog.d("广告开关 adswitch=$value")
+        AdLog.d("广告开关 adswitch=$value（等待中 ${listeners.size} 个）")
         if (listeners.isNotEmpty()) {
-            mainHandler.post { listeners.forEach { it(value) } }
+            mainHandler.post {
+                AdLog.d("唤醒等待中的 await，enabled=$value")
+                listeners.forEach { it(value) }
+            }
         }
     }
 
@@ -100,8 +104,12 @@ internal object AdSwitch {
      * 等待开关结果；超时则使用当前值（默认 true）。回调切到主线程。
      */
     fun await(timeoutMs: Long, callback: (Boolean) -> Unit) {
+        AdLog.d("await 进入：resolved=$resolved enabled=$enabled timeout=${timeoutMs}ms")
         if (resolved) {
-            mainHandler.post { callback(enabled) }
+            mainHandler.post {
+                AdLog.d("await 已解析立即回调 enabled=$enabled")
+                callback(enabled)
+            }
             return
         }
         synchronized(this) {
@@ -115,11 +123,17 @@ internal object AdSwitch {
                             timedOut = true
                         }
                     }
-                    if (timedOut) callback(enabled)
+                    if (timedOut) {
+                        AdLog.w("await 超时（${timeoutMs}ms），按当前值放行 enabled=$enabled")
+                        callback(enabled)
+                    }
                 }, timeoutMs)
                 return
             }
         }
-        mainHandler.post { callback(enabled) }
+        mainHandler.post {
+            AdLog.d("await 注册时已被解析，回调 enabled=$enabled")
+            callback(enabled)
+        }
     }
 }
